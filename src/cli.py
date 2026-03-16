@@ -17,30 +17,39 @@ class CLIRunner:
         self.inferencer = OllamaInferencer()
         self.notion_writer = NotionWriter()
 
-    def process_single(self, raw_input: str) -> bool:
-        """Process a single URL input (which might contain 'later')"""
+    def process_single(
+        self, raw_input: str, index: int = None, total: int = None
+    ) -> Tuple[bool, str]:
+        """Process a single URL input (which might contain 'later')
+
+        Returns:
+            Tuple of (success: bool, url_or_identifier: str)
+        """
         parts = raw_input.strip().split()
         if not parts:
-            print("[ERROR] Empty input.")
-            return False
+            return False, "(empty line)"
 
         url = parts[0]
         force_later = False
         if len(parts) > 1 and parts[1].lower() == "later":
             force_later = True
 
-        print(f"[INFO] Extracting metadata for: {url}...")
+        # Build prefix for better traceability in bulk mode
+        prefix = f"[{index}/{total}] " if index and total else ""
+        print(f"{prefix}[INFO] Extracting metadata for: {url}...")
 
         try:
             metadata = self.extractor.extract(url, force_later=force_later)
             print(
-                f"[INFO] Metadata enriched. Title: '{metadata.title}', Tags: {len(metadata.tags)}, Category: {metadata.game_category}"
+                f"{prefix}[INFO] Metadata enriched. Title: '{metadata.title}', Tags: {len(metadata.tags)}, Category: {metadata.game_category}"
             )
 
-            print("[INFO] Requesting classification from MiniMax 2.5 (via Ollama)...")
+            print(
+                f"{prefix}[INFO] Requesting classification from MiniMax 2.5 (via Ollama)..."
+            )
             inference = self.inferencer.infer(metadata)
             print(
-                f"[INFO] AI Confidence: {inference.confidence:.2f}. Category: {inference.category.value}. Priority: {inference.priority.value}"
+                f"{prefix}[INFO] AI Confidence: {inference.confidence:.2f}. Category: {inference.category.value}. Priority: {inference.priority.value}"
             )
 
             payload = FinalPayload(metadata=metadata, inference=inference)
@@ -49,30 +58,32 @@ class CLIRunner:
                 payload.metadata.force_later
                 and payload.inference.priority.value != "Later"
             ):
-                print(f"[INFO] Manual override active: Priority forced to 'Later'.")
+                print(
+                    f"{prefix}[INFO] Manual override active: Priority forced to 'Later'."
+                )
 
             page_id = self.notion_writer.upsert_page(payload)
             print(
-                f"[SUCCESS] Entry created/updated in Notion: {metadata.title} (ID: {page_id})"
+                f"{prefix}[SUCCESS] Entry created/updated in Notion: {metadata.title} (ID: {page_id})"
             )
-            return True
+            return True, url
 
         except ExtractionError as e:
-            print(f"[ERROR] Extraction failed for {url}: {str(e)}")
-            return False
+            print(f"{prefix}[ERROR] Extraction failed for {url}: {str(e)}")
+            return False, url
         except InferenceError as e:
-            print(f"[ERROR] Inference failed for {url}: {str(e)}")
-            return False
+            print(f"{prefix}[ERROR] Inference failed for {url}: {str(e)}")
+            return False, url
         except NotionWriterError as e:
-            print(f"[ERROR] Notion write failed for {url}: {str(e)}")
-            return False
+            print(f"{prefix}[ERROR] Notion write failed for {url}: {str(e)}")
+            return False, url
         except APIResponseError as e:
             msg = getattr(e, "message", str(e))
-            print(f"[ERROR] Notion API error for {url}: {msg}")
-            return False
+            print(f"{prefix}[ERROR] Notion API error for {url}: {msg}")
+            return False, url
         except Exception as e:
-            print(f"[ERROR] Unexpected error processing {url}: {str(e)}")
-            return False
+            print(f"{prefix}[ERROR] Unexpected error processing {url}: {str(e)}")
+            return False, url
 
     def process_bulk(self, filepath: str, max_workers: int = 5):
         """Process URLs from a file concurrently"""
@@ -94,28 +105,42 @@ class CLIRunner:
 
         success_count = 0
         fail_count = 0
+        failed_urls = []
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_url = {
-                executor.submit(self.process_single, line): line for line in lines
+            # Submit all tasks with their index
+            future_to_info = {
+                executor.submit(self.process_single, line, idx + 1, total): (
+                    idx + 1,
+                    line,
+                )
+                for idx, line in enumerate(lines)
             }
 
-            for future in as_completed(future_to_url):
-                line = future_to_url[future]
+            for future in as_completed(future_to_info):
+                idx, line = future_to_info[future]
                 try:
-                    success = future.result()
+                    success, url = future.result()
                     if success:
                         success_count += 1
                     else:
                         fail_count += 1
+                        failed_urls.append((idx, url))
                 except Exception as e:
-                    print(f"[ERROR] Fatal exception for line '{line}': {str(e)}")
+                    print(f"[ERROR] Fatal exception for line [{idx}]: {line}: {str(e)}")
                     fail_count += 1
+                    failed_urls.append((idx, line))
 
-        print("\n--- Bulk Processing Summary ---")
+        print("\n" + "=" * 50)
+        print("--- Bulk Processing Summary ---")
         print(f"Total: {total}")
         print(f"Success: {success_count}")
         print(f"Failed: {fail_count}")
+
+        if failed_urls:
+            print("\n--- Failed URLs ---")
+            for idx, url in failed_urls:
+                print(f"  [{idx}] {url}")
 
 
 def main():
