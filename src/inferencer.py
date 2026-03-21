@@ -69,10 +69,17 @@ Do not include any markdown formatting, backticks, or extra text. Output ONLY va
             "format": "json",
         }
 
+        headers = {"Content-Type": "application/json"}
+        if config.OLLAMA_API_KEY:
+            headers["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
+
         response_text = ""
         try:
             response = requests.post(
-                f"{self.base_url}/api/generate", json=payload, timeout=30
+                f"{self.base_url}/api/generate",
+                json=payload,
+                headers=headers,
+                timeout=30,
             )
             response.raise_for_status()
 
