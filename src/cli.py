@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Tuple
 
 from .config import config
-from .models import FinalPayload
+from .models import FinalPayload, PriorityEnum
 from .extractor import MetadataExtractor, ExtractionError
 from .inferencer import OllamaInferencer, InferenceError
 from .notion_writer import NotionWriter, NotionWriterError
@@ -18,7 +18,7 @@ class CLIRunner:
         self.notion_writer = NotionWriter()
 
     def process_single(
-        self, raw_input: str, index: int = None, total: int = None
+        self, raw_input: str, index: int | None = None, total: int | None = None
     ) -> Tuple[bool, str]:
         """Process a single URL input (which might contain 'later')
 
@@ -30,22 +30,30 @@ class CLIRunner:
             return False, "(empty line)"
 
         url = parts[0]
-        force_later = False
-        if len(parts) > 1 and parts[1].lower() == "later":
-            force_later = True
+        manual_priority = None
+        if len(parts) > 1:
+            raw_prio = parts[1].lower()
+            prio_map = {
+                "high": PriorityEnum.HIGH,
+                "medium": PriorityEnum.MEDIUM,
+                "low": PriorityEnum.LOW,
+                "later": PriorityEnum.LATER,
+            }
+            if raw_prio in prio_map:
+                manual_priority = prio_map[raw_prio]
 
         # Build prefix for better traceability in bulk mode
         prefix = f"[{index}/{total}] " if index and total else ""
         print(f"{prefix}[INFO] Extracting metadata for: {url}...")
 
         try:
-            metadata = self.extractor.extract(url, force_later=force_later)
+            metadata = self.extractor.extract(url, manual_priority=manual_priority)
             print(
-                f"{prefix}[INFO] Metadata enriched. Title: '{metadata.title}', Tags: {len(metadata.tags)}, Category: {metadata.game_category}"
+                f"{prefix}[INFO] Metadata enriched. Title: '{metadata.title}', Channel: '{metadata.channel}', Tags: {len(metadata.tags)}, Category: {metadata.game_category}"
             )
 
             print(
-                f"{prefix}[INFO] Requesting classification from MiniMax 2.5 (via Ollama)..."
+                f"{prefix}[INFO] Requesting classification from {config.OLLAMA_MODEL} (via Ollama Cloud)..."
             )
             inference = self.inferencer.infer(metadata)
             print(
@@ -55,11 +63,11 @@ class CLIRunner:
             payload = FinalPayload(metadata=metadata, inference=inference)
 
             if (
-                payload.metadata.force_later
-                and payload.inference.priority.value != "Later"
+                payload.metadata.manual_priority
+                and payload.inference.priority != payload.metadata.manual_priority
             ):
                 print(
-                    f"{prefix}[INFO] Manual override active: Priority forced to 'Later'."
+                    f"{prefix}[INFO] Manual override active: Priority forced to '{payload.metadata.manual_priority.value}'."
                 )
 
             page_id = self.notion_writer.upsert_page(payload)
@@ -150,7 +158,7 @@ def main():
         "-u",
         "--url",
         type=str,
-        help="Single YouTube URL (append ' later' if you want to force priority)",
+        help="Single YouTube URL (append ' high', ' medium', ' low', or ' later' if you want to force priority)",
     )
     group.add_argument(
         "-f", "--file", type=str, help="Path to text file containing URLs"

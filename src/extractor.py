@@ -5,10 +5,8 @@ from tenacity import (
     stop_after_attempt,
     retry_if_exception_type,
 )
-from .models import VideoMetadata
-
-
-from typing import Any, Dict
+from .models import VideoMetadata, PriorityEnum
+from typing import Any, Dict, Optional
 
 
 class ExtractionError(Exception):
@@ -29,7 +27,9 @@ class MetadataExtractor:
         stop=stop_after_attempt(3),
         retry=retry_if_exception_type(ExtractionError),
     )
-    def extract(self, url: str, force_later: bool = False) -> VideoMetadata:
+    def extract(
+        self, url: str, manual_priority: Optional[PriorityEnum] = None
+    ) -> VideoMetadata:
         try:
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -40,6 +40,11 @@ class MetadataExtractor:
                 tags = info.get("tags", [])
                 categories = info.get("categories", [])
                 game_category = None
+
+                # yt-dlp captures 'uploader' or 'channel'
+                channel = (
+                    info.get("uploader") or info.get("channel") or "Unknown Channel"
+                )
 
                 # If "Gaming" is in categories, yt-dlp sometimes puts the game name in "track" or "chapters"
                 # but "categories" is generally safe. We'll extract "categories" or specific game fields.
@@ -61,10 +66,11 @@ class MetadataExtractor:
                 return VideoMetadata(
                     url=url,
                     title=title,
+                    channel=channel,
                     description=info.get("description") or "",
                     tags=tags if tags else [],
                     game_category=game_category,
-                    force_later=force_later,
+                    manual_priority=manual_priority,
                 )
         except Exception as e:
             raise ExtractionError(f"Failed to extract info from {url}: {str(e)}")

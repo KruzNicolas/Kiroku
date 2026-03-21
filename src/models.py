@@ -22,12 +22,13 @@ class PriorityEnum(str, Enum):
 class VideoMetadata(BaseModel):
     url: str
     title: str = Field(default="Unknown Title")
+    channel: str = Field(default="Unknown Channel")
     description: str = Field(default="")
     tags: List[str] = Field(default_factory=list)
     game_category: Optional[str] = None
-    force_later: bool = Field(
-        default=False,
-        description="Flag indicating if the manual 'later' override was present",
+    manual_priority: Optional[PriorityEnum] = Field(
+        default=None,
+        description="Manual priority override (high, medium, low, later)",
     )
 
 
@@ -44,6 +45,6 @@ class FinalPayload(BaseModel):
 
     @property
     def final_priority(self) -> PriorityEnum:
-        if self.metadata.force_later:
-            return PriorityEnum.LATER
+        if self.metadata.manual_priority:
+            return self.metadata.manual_priority
         return self.inference.priority

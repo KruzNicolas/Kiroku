@@ -34,6 +34,7 @@ class NotionWriter:
         """
         properties = {
             "Title": {"title": [{"text": {"content": payload.metadata.title}}]},
+            "Channel": {"rich_text": [{"text": {"content": payload.metadata.channel}}]},
             "URL": {"url": payload.metadata.url},
             "Category": {"select": {"name": payload.inference.category.value}},
             "Priority": {"select": {"name": payload.final_priority.value}},
