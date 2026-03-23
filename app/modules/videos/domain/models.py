@@ -1,5 +1,6 @@
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -24,12 +25,9 @@ class VideoMetadata(BaseModel):
     title: str = Field(default="Unknown Title")
     channel: str = Field(default="Unknown Channel")
     description: str = Field(default="")
-    tags: List[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
     game_category: Optional[str] = None
-    manual_priority: Optional[PriorityEnum] = Field(
-        default=None,
-        description="Manual priority override (high, medium, low, later)",
-    )
+    manual_priority: Optional[PriorityEnum] = Field(default=None)
 
 
 class InferenceResult(BaseModel):

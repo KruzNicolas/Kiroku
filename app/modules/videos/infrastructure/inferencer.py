@@ -1,8 +1,10 @@
 import json
+
 from ollama import Client, ResponseError
-from tenacity import retry, wait_exponential, stop_after_attempt
-from .models import VideoMetadata, InferenceResult, CategoryEnum, PriorityEnum
-from .config import config
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+from app.modules.videos.domain.models import InferenceResult, VideoMetadata
+from app.shared.config.settings import get_settings
 
 
 class InferenceError(Exception):
@@ -11,14 +13,14 @@ class InferenceError(Exception):
 
 class OllamaInferencer:
     def __init__(self):
-        self.model = config.OLLAMA_MODEL
+        settings = get_settings()
+        headers: dict[str, str] = {}
+        if settings.ollama_api_key:
+            headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
 
-        headers = {}
-        if config.OLLAMA_API_KEY:
-            headers["Authorization"] = f"Bearer {config.OLLAMA_API_KEY}"
-
+        self.model = settings.ollama_model
         self.client = Client(
-            host=config.OLLAMA_BASE_URL.rstrip("/"),
+            host=settings.ollama_base_url.rstrip("/"),
             headers=headers if headers else None,
         )
 
@@ -69,35 +71,32 @@ Do not include any markdown formatting, backticks, or extra text. Output ONLY va
     )
     def infer(self, metadata: VideoMetadata) -> InferenceResult:
         prompt = self._build_prompt(metadata)
-
         response_text = ""
         try:
             response = self.client.generate(
-                model=self.model, prompt=prompt, format="json", stream=False
+                model=self.model,
+                prompt=prompt,
+                format="json",
+                stream=False,
             )
 
-            # In the official python library, the text is available in response.response
-            # or response['response']
             response_text = (
                 response.response
                 if hasattr(response, "response")
                 else response.get("response", "")
             )
-
-            # Clean up response if the model accidentally included markdown
             response_text = (
                 response_text.replace("```json", "").replace("```", "").strip()
             )
 
             parsed_data = json.loads(response_text)
             return InferenceResult(**parsed_data)
-
-        except ResponseError as e:
-            raise InferenceError(f"Ollama API request failed: {e.error}")
-        except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse model JSON output: {str(e)}"
-            if "response_text" in locals():
+        except ResponseError as exc:
+            raise InferenceError(f"Ollama API request failed: {exc.error}") from exc
+        except json.JSONDecodeError as exc:
+            error_msg = f"Failed to parse model JSON output: {exc}"
+            if response_text:
                 error_msg += f"\nRaw output: {response_text}"
-            raise InferenceError(error_msg)
-        except Exception as e:
-            raise InferenceError(f"Validation or Inference error: {str(e)}")
+            raise InferenceError(error_msg) from exc
+        except Exception as exc:
+            raise InferenceError(f"Validation or Inference error: {exc}") from exc

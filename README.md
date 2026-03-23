@@ -1,14 +1,12 @@
-# Kiroku CLI
+# Kiroku API
 
-Kiroku CLI is a powerful command-line tool that automates the ingestion, metadata extraction, and AI-powered classification of YouTube links directly into a structured Notion database. 
-
-It uses `yt-dlp` to extract clean metadata without downloading media, and leverages a serverless AI architecture via the Ollama Cloud API (MiniMax 2.5) to categorize videos strictly into designated learning/watch queues.
+Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-powered classification, and idempotent persistence of YouTube videos into Notion.
 
 ## 🚀 Features
 
 - **Automated Metadata Extraction:** Safely extracts video title, channel name, tags, description, and game category using `yt-dlp`.
 - **Cloud AI Classification:** Routes reasoning requests directly to the Ollama Cloud API, yielding high-accuracy output mapped to strict Notion schemas without requiring any local GPU or model hosting.
-- **Single & Bulk Processing:** Process a single URL immediately or feed it a `.txt` file to process hundreds of URLs concurrently.
+- **Single & Bulk API Processing:** Process a single URL or send batches through HTTP endpoints.
 - **Smart Retries & Resilience:** Handles API rate-limits gracefully with exponential backoff (`tenacity`) for both the AI model and the Notion API.
 - **Manual Priority Overrides:** Support for appending `high`, `medium`, `low`, or `later` next to a URL to bypass AI priority reasoning and forcefully push the video to a specific queue.
 
@@ -22,8 +20,8 @@ It uses `yt-dlp` to extract clean metadata without downloading media, and levera
 
 1. **Clone the repository:**
    ```bash
-   git clone git@github.com:KruzNicolas/Kiroku-cli.git
-   cd Kiroku-cli
+   git clone git@github.com:KruzNicolas/Kiroku.git
+   cd Kiroku
    ```
 
 2. **Set up the virtual environment:**
@@ -38,35 +36,89 @@ It uses `yt-dlp` to extract clean metadata without downloading media, and levera
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID`, and `OLLAMA_API_KEY`.
+   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID_VIDEOS`, and `OLLAMA_API_KEY`.
 
-## 💻 Usage
+## 💻 API Usage
 
-We provide an easy-to-use script (`run.sh`) that automatically activates your environment and handles the commands.
+### Start the API
 
-### 1. Process a Single URL
 ```bash
-./run.sh url "https://www.youtube.com/watch?v=..."
+uvicorn app.main:app --reload
 ```
 
-**Force a specific priority (Manual Override):**
-If you want to skip AI priority reasoning and push the video to a specific bucket, append `high`, `medium`, `low`, or `later` to the URL string:
+### 1. Health check
+
 ```bash
-./run.sh url "https://www.youtube.com/watch?v=... later"
-./run.sh url "https://www.youtube.com/watch?v=... high"
+curl -X GET "http://127.0.0.1:8000/health"
 ```
 
-### 2. Process Bulk URLs from a File
-Create a text file (e.g., `links.txt`) with one URL per line. Blank lines and comments (starting with `#`) are ignored.
+### 2. Create one video record
+
 ```bash
-./run.sh file links.txt
+curl -X POST "http://127.0.0.1:8000/api/v1/videos" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.youtube.com/watch?v=...", "manual_priority":"later"}'
 ```
 
-**Custom Concurrency:**
-You can specify the number of parallel workers (default is 3) to process files faster. Beware of YouTube/Notion rate limits.
+### 3. Create videos in batch
+
 ```bash
-./run.sh file links.txt 5
+curl -X POST "http://127.0.0.1:8000/api/v1/videos/batch" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"url": "https://www.youtube.com/watch?v=..."},
+      {"url": "https://www.youtube.com/watch?v=...", "manual_priority": "low"}
+    ],
+    "max_workers": 3
+  }'
 ```
+
+Batch response includes `failed_urls` to quickly identify links that could not be persisted.
+
+## 🧪 Test Write Mode (optional)
+
+If you run real API calls against your Notion database and want to identify test records quickly:
+
+- set `APP_TEST_WRITE_MODE=true`
+- if confidence would be `>= 0.8`, the API forces it to `0.79`
+
+Disable it with `APP_TEST_WRITE_MODE=false`.
 
 ## 🏗 Architecture & Spec-Driven Development
-This project was developed strictly adhering to Spec-Driven Development (SDD), enforcing strong typings (`pydantic`), interface contracts, and single-responsibility architectural layers (`extractor`, `inferencer`, `notion_writer`).
+This project follows Spec-Driven Development (SDD), enforcing strong typings (`pydantic`), interface contracts, and modular layers (`api`, `application`, `domain`, `infrastructure`, `shared`).
+
+## 🏗 Architecture & Migration Status
+
+- FastAPI modular monolith structure is active under `app/`.
+- The `videos` module is migrated and exposed via API.
+- Notion persistence is centralized in `app/shared/notion/save_layer.py`.
+- Module-owned DB id is configured through `NOTION_DATABASE_ID_VIDEOS`.
+
+### API Endpoints
+
+- `GET /health`
+- `POST /api/v1/videos`
+- `POST /api/v1/videos/batch`
+
+### Run FastAPI locally
+
+```bash
+uvicorn app.main:app --reload
+```
+
+### Important migration constraint
+
+No Docker/container/cloud infrastructure changes are part of this migration stage.
+
+## ✅ Testing
+
+Run tests with:
+
+```bash
+pytest
+```
+
+Current test coverage includes:
+- API endpoint contract tests (`/health`, `/videos`, `/videos/batch`) with dependency overrides.
+- Videos service unit tests for single processing, bulk processing, and validation errors.

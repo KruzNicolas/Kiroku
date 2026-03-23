@@ -46,7 +46,7 @@ Mandatory end-to-end flow:
 
 ### 3.1 Runtime Sequence
 
-1. Receive URL input (single string argument) or a `.txt` file (one URL per line), supporting optional inline manual token `later` (example: `https://youtube.com/... later`).
+1. Receive URL input via API request body (single input string or bulk inputs array), supporting optional inline manual token `later` (example: `https://youtube.com/... later`).
 2. Validate URL format and deduplicate.
 3. Run yt-dlp metadata extraction for each valid URL.
 4. Build normalized inference payload.
@@ -63,7 +63,7 @@ Mandatory end-to-end flow:
 
 ### 4.1 Single Mode
 
-- Accept one URL via CLI argument or input string.
+- Accept one URL via API request body input string.
 - Support optional manual marker `later` next to URL to force Priority `Later`.
 - Process immediately.
 - Return structured classification output and Notion write status.
@@ -193,7 +193,7 @@ If the keyword `later` appears next to a URL in input, the system MUST:
 - **FR-011**: AI rationale MUST be written to the Notion page body content, not to a database property.
 - **FR-012**: Confidence MUST be written to property `Confidence` as Number.
 - **FR-013**: If input includes keyword `later` next to URL, final Priority MUST be forced to `Later`.
-- **FR-014**: The tool MUST print real-time step-by-step terminal logs for each processing stage.
+- **FR-014**: The API MUST emit structured request logs for each processing stage.
 - **FR-015**: The tool MUST NOT persist logs to disk.
 
 ### 9.2 Disambiguation Logic (Game Category + Tags)
@@ -249,7 +249,7 @@ Page body content mapping:
 
 The implementation stack for v1 is:
 
-1. **Python**: Primary language for CLI orchestration and pipeline execution.
+1. **Python**: Primary language for API orchestration and pipeline execution.
 2. **HTTP Request to Ollama localhost**: Local API calls to Ollama endpoint for model inference routing to MiniMax 2.5.
 3. **yt-dlp**: Metadata extraction from YouTube URLs (title, description, tags, game category if available).
 4. **notion-client**: Official Notion API SDK for creating/updating database entries and writing rationale into page body.
@@ -286,12 +286,12 @@ Suggested runtime dependencies:
 - Validate URL format before processing.
 - For invalid or inaccessible links, mark record as `failed` with reason.
 - Continue processing remaining links in bulk mode (no full-batch abort).
-- Print structured terminal logs per URL: stage, error code, retry count.
+- Emit structured request logs per URL: stage, error code, retry count.
 - Emit final batch report with actionable failures.
 
-### 11.3 CLI Feedback and Logging
+### 11.3 API Observability and Logging
 
-The tool MUST display real-time step-by-step logs in terminal, for example:
+The API MUST expose real-time structured logs for each request, for example:
 
 1. `[INFO] Extracting metadata for: [URL]...`
 2. `[INFO] Metadata enriched (Tags & Category found).`
@@ -301,7 +301,7 @@ The tool MUST display real-time step-by-step logs in terminal, for example:
 
 Logging policy:
 
-1. Logs are terminal-only for run-time feedback.
+1. Logs are emitted to process stdout for run-time feedback.
 2. The tool MUST NOT save logs to files or external storage.
 
 ### 11.4 Reliability Safeguards
@@ -318,7 +318,7 @@ Logging policy:
 1. **Accuracy**: Category and Priority consistency target >= 90% on validation set.
 2. **Performance**: Single URL processing target < 8s median (network dependent).
 3. **Scalability**: Bulk mode should process at least 500 URLs per run without manual intervention.
-4. **Observability**: Real-time terminal logs and per-stage run metrics are required.
+4. **Observability**: Real-time structured logs and per-stage run metrics are required.
 5. **Security**: API keys stored in environment variables; never persisted in logs.
 6. **Logging Privacy**: No persistent log files are created.
 
