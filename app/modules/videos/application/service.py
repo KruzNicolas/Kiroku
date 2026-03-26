@@ -3,8 +3,9 @@ from typing import Any, Protocol
 
 from app.modules.videos.domain.models import FinalPayload, PriorityEnum
 from app.modules.videos.module_config import get_videos_database_id
+from app.shared.config.dates import current_added_at_iso_date
 from app.shared.config.settings import get_settings
-from app.shared.notion.contracts import NotionSaveCommand
+from app.shared.notion.contracts import NotionSaveCommand, NotionUpsertDescriptor
 
 
 class ExtractorPort(Protocol):
@@ -54,6 +55,7 @@ class VideosService:
             inference.confidence = 0.79
 
         payload = FinalPayload(metadata=metadata, inference=inference)
+        added_at_iso_date = current_added_at_iso_date()
 
         properties = {
             "Title": {"title": [{"text": {"content": payload.metadata.title}}]},
@@ -62,6 +64,7 @@ class VideosService:
             "Category": {"select": {"name": payload.inference.category.value}},
             "Priority": {"select": {"name": payload.final_priority.value}},
             "Confidence": {"number": payload.inference.confidence},
+            "Added at": {"date": {"start": added_at_iso_date}},
         }
         children = [
             {
@@ -87,9 +90,13 @@ class VideosService:
 
         command = NotionSaveCommand(
             database_id=get_videos_database_id(),
-            unique_url=payload.metadata.url,
             properties=properties,
             children=children,
+            upsert=NotionUpsertDescriptor(
+                property_name="URL",
+                property_type="url",
+                equals=payload.metadata.url,
+            ),
         )
         page_id = self.notion_save_layer.upsert_page(command)
         return {"status": "ok", "page_id": page_id, "url": payload.metadata.url}

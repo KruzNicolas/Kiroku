@@ -1,0 +1,1 @@
+"""Study assets API package."""

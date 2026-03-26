@@ -3,7 +3,9 @@ import logging
 
 LOG_FORMAT = (
     "%(asctime)s %(levelname)s %(name)s "
-    "request_id=%(request_id)s method=%(method)s path=%(path)s message=%(message)s"
+    "request_id=%(request_id)s method=%(method)s path=%(path)s "
+    "source=%(source)s source_message_id=%(source_message_id)s "
+    "source_user_id=%(source_user_id)s message=%(message)s"
 )
 
 
@@ -15,6 +17,12 @@ class RequestContextFilter(logging.Filter):
             record.method = "-"
         if not hasattr(record, "path"):
             record.path = "-"
+        if not hasattr(record, "source"):
+            record.source = "-"
+        if not hasattr(record, "source_message_id"):
+            record.source_message_id = "-"
+        if not hasattr(record, "source_user_id"):
+            record.source_user_id = "-"
         return True
 
 

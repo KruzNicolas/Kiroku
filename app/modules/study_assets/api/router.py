@@ -1,0 +1,56 @@
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
+
+from app.modules.study_assets.application.service import StudyAssetsService
+from app.shared.notion.client import build_notion_client
+from app.shared.notion.save_layer import NotionSaveLayer, NotionSaveLayerError
+
+router = APIRouter(prefix="/study-assets", tags=["study-assets"])
+
+
+class CreateJapaneseAssetResponse(BaseModel):
+    status: str
+    page_id: str
+    language: str
+    asset_id: str
+    title: str
+
+
+def get_study_assets_service() -> StudyAssetsService:
+    notion_client = build_notion_client()
+    notion_save_layer = NotionSaveLayer(notion_client)
+    return StudyAssetsService(notion_save_layer=notion_save_layer)
+
+
+@router.post("/japanese", response_model=CreateJapaneseAssetResponse, status_code=201)
+async def create_japanese_asset(
+    image: UploadFile = File(...),
+    note: str | None = Form(default=None),
+    service: StudyAssetsService = Depends(get_study_assets_service),
+) -> CreateJapaneseAssetResponse:
+    try:
+        content_type = (image.content_type or "").strip().lower()
+        if content_type not in {"image/jpeg", "image/png"}:
+            raise ValueError(
+                "Unsupported study asset image type. Use image/jpeg or image/png (convert HEIC/HEIF before sending)."
+            )
+
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise ValueError("image is empty")
+
+        result = service.create_japanese_asset(
+            image_bytes=image_bytes,
+            image_content_type=content_type,
+            notes=note,
+        )
+        return CreateJapaneseAssetResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotionSaveLayerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            status_code=500,
+            detail="Unexpected study asset processing error",
+        ) from exc

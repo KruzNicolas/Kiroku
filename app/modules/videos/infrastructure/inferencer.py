@@ -18,7 +18,7 @@ class OllamaInferencer:
         if settings.ollama_api_key:
             headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
 
-        self.model = settings.ollama_model
+        self.model = settings.ollama_model_video
         self.client = Client(
             host=settings.ollama_base_url.rstrip("/"),
             headers=headers if headers else None,

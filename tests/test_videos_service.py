@@ -1,3 +1,4 @@
+import app.modules.videos.application.service as videos_service_module
 from app.modules.videos.application.service import VideosService
 from app.modules.videos.domain.models import (
     CategoryEnum,
@@ -39,6 +40,14 @@ class StubNotionSaveLayer:
         return "page_test_123"
 
 
+def _patch_added_at_date(monkeypatch, value: str = "2026-03-23"):
+    monkeypatch.setattr(
+        videos_service_module,
+        "current_added_at_iso_date",
+        lambda: value,
+    )
+
+
 def _build_service(notion_layer: StubNotionSaveLayer | None = None) -> VideosService:
     notion_layer = notion_layer or StubNotionSaveLayer()
     return VideosService(
@@ -48,13 +57,50 @@ def _build_service(notion_layer: StubNotionSaveLayer | None = None) -> VideosSer
     )
 
 
-def test_process_url_success_with_manual_priority():
+def test_process_url_success_with_manual_priority(monkeypatch):
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    # Ensure deterministic Added at date from shared date helper
+    _patch_added_at_date(monkeypatch, "2026-03-23")
+
     service = _build_service()
     result = service.create_video("https://youtube.com/watch?v=test1 later")
 
     assert result["status"] == "ok"
     assert result["page_id"] == "page_test_123"
     assert result["url"] == "https://youtube.com/watch?v=test1"
+
+    assert service.notion_save_layer.last_command is not None
+    assert (
+        service.notion_save_layer.last_command.properties["Added at"]["date"]["start"]
+        == "2026-03-23"
+    )
+    assert service.notion_save_layer.last_command.upsert is not None
+    assert service.notion_save_layer.last_command.upsert.property_name == "URL"
+    assert service.notion_save_layer.last_command.upsert.property_type == "url"
+    assert (
+        service.notion_save_layer.last_command.upsert.equals
+        == "https://youtube.com/watch?v=test1"
+    )
+
+    get_settings.cache_clear()
+
+
+def test_create_video_preserves_url_for_upsert_descriptor():
+    service = _build_service()
+    result = service.create_video("https://youtube.com/watch?v=test-upsert&t=30s")
+
+    assert result["status"] == "ok"
+    assert service.notion_save_layer.last_command is not None
+    assert service.notion_save_layer.last_command.upsert is not None
+    assert service.notion_save_layer.last_command.upsert.property_name == "URL"
+    assert service.notion_save_layer.last_command.upsert.property_type == "url"
+    assert (
+        service.notion_save_layer.last_command.upsert.equals
+        == "https://youtube.com/watch?v=test-upsert&t=30s"
+    )
 
 
 def test_process_bulk_mixed_inputs():
@@ -91,6 +137,7 @@ def test_process_url_forces_test_confidence_below_point_8(monkeypatch):
     from app.shared.config.settings import get_settings
 
     get_settings.cache_clear()
+    _patch_added_at_date(monkeypatch, "2026-03-23")
 
     notion_layer = StubNotionSaveLayer()
     service = _build_service(notion_layer=notion_layer)
@@ -107,7 +154,7 @@ def test_process_url_forces_test_confidence_below_point_8(monkeypatch):
 class FailOnSpecificUrlNotionLayer(StubNotionSaveLayer):
     def upsert_page(self, command):
         self.last_command = command
-        if "fail" in command.unique_url:
+        if command.upsert and "fail" in str(command.upsert.equals):
             raise RuntimeError("Simulated DB failure")
         return "page_test_123"
 
@@ -129,3 +176,26 @@ def test_create_videos_bulk_returns_failed_urls_on_errors():
     assert result["success_count"] == 1
     assert result["fail_count"] == 1
     assert result["failed_urls"] == ["https://youtube.com/watch?v=fail2"]
+
+
+def test_added_at_uses_configured_timezone(monkeypatch):
+    monkeypatch.setenv("VIDEOS_ADDED_AT_TIMEZONE", "America/Bogota")
+
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    _patch_added_at_date(monkeypatch, "2026-03-23")
+
+    notion_layer = StubNotionSaveLayer()
+    service = _build_service(notion_layer=notion_layer)
+    result = service.create_video("https://youtube.com/watch?v=test-timezone")
+
+    assert result["status"] == "ok"
+    assert notion_layer.last_command is not None
+    assert (
+        notion_layer.last_command.properties["Added at"]["date"]["start"]
+        == "2026-03-23"
+    )
+
+    monkeypatch.delenv("VIDEOS_ADDED_AT_TIMEZONE", raising=False)
+    get_settings.cache_clear()

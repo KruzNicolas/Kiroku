@@ -13,6 +13,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
         start = time.perf_counter()
+
+        logger.info(
+            "request started",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "source": getattr(request.state, "source", "-"),
+                "source_message_id": getattr(request.state, "source_message_id", "-"),
+                "source_user_id": getattr(request.state, "source_user_id", "-"),
+            },
+        )
+
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - start) * 1000
 
@@ -24,6 +37,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
+                "source": getattr(request.state, "source", "-"),
+                "source_message_id": getattr(request.state, "source_message_id", "-"),
+                "source_user_id": getattr(request.state, "source_user_id", "-"),
             },
         )
 

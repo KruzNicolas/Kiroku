@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.modules.videos.api.router import get_videos_service
+from app.shared.security.state import idempotency_store, rate_limiter
 
 
 class StubVideosService:
@@ -43,7 +44,26 @@ def _override_service() -> StubVideosService:
     return StubVideosService()
 
 
+def _auth_headers(
+    source: str = "discord-bot",
+    idempotency_key: str = "discord:g:c:m1",
+):
+    return {
+        "Authorization": "Bearer test-internal-token",
+        "X-Source": source,
+        "X-Source-Message-Id": "msg-1",
+        "X-Source-User-Id": "user-1",
+        "Idempotency-Key": idempotency_key,
+    }
+
+
 def test_health_endpoint_returns_ok():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
     client = TestClient(app)
     response = client.get("/health")
     assert response.status_code == 200
@@ -51,6 +71,12 @@ def test_health_endpoint_returns_ok():
 
 
 def test_process_video_endpoint_contract():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
     app.dependency_overrides[get_videos_service] = _override_service
     client = TestClient(app)
 
@@ -60,6 +86,7 @@ def test_process_video_endpoint_contract():
             "url": "https://youtube.com/watch?v=123",
             "manual_priority": "later",
         },
+        headers=_auth_headers(idempotency_key="discord:g:c:m-video-1"),
     )
 
     assert response.status_code == 201
@@ -69,9 +96,16 @@ def test_process_video_endpoint_contract():
     assert body["url"] == "https://youtube.com/watch?v=123"
 
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
 
 
 def test_process_bulk_endpoint_contract():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
     app.dependency_overrides[get_videos_service] = _override_service
     client = TestClient(app)
 
@@ -87,6 +121,7 @@ def test_process_bulk_endpoint_contract():
             ],
             "max_workers": 2,
         },
+        headers=_auth_headers(idempotency_key="discord:g:c:m-batch-1"),
     )
 
     assert response.status_code == 200
@@ -99,9 +134,16 @@ def test_process_bulk_endpoint_contract():
     assert len(body["results"]) == 2
 
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
 
 
 def test_process_bulk_endpoint_returns_failed_urls():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
     app.dependency_overrides[get_videos_service] = _override_service
     client = TestClient(app)
 
@@ -114,6 +156,7 @@ def test_process_bulk_endpoint_returns_failed_urls():
             ],
             "max_workers": 2,
         },
+        headers=_auth_headers(idempotency_key="discord:g:c:m-batch-2"),
     )
 
     assert response.status_code == 200
@@ -125,3 +168,77 @@ def test_process_bulk_endpoint_returns_failed_urls():
     assert body["failed_urls"] == ["https://youtube.com/watch?v=fail2"]
 
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+def test_requires_internal_api_token():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/videos",
+        json={"url": "https://youtube.com/watch?v=123"},
+    )
+    assert response.status_code == 401
+
+
+def test_idempotency_replays_response_without_reprocessing():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
+    app.dependency_overrides[get_videos_service] = _override_service
+    client = TestClient(app)
+
+    headers = _auth_headers(idempotency_key="discord:g:c:m-idem-1")
+
+    first = client.post(
+        "/api/v1/videos",
+        json={"url": "https://youtube.com/watch?v=123"},
+        headers=headers,
+    )
+    second = client.post(
+        "/api/v1/videos",
+        json={"url": "https://youtube.com/watch?v=123"},
+        headers=headers,
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert second.headers.get("X-Idempotency-Replayed") == "true"
+    assert first.json() == second.json()
+
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
+
+
+def test_rate_limit_blocks_when_exceeded():
+    from app.shared.config.settings import get_settings
+
+    get_settings.cache_clear()
+    idempotency_store.clear()
+    rate_limiter.clear()
+
+    app.dependency_overrides[get_videos_service] = _override_service
+    client = TestClient(app)
+
+    last_response = None
+    for idx in range(21):
+        last_response = client.post(
+            "/api/v1/videos",
+            json={"url": f"https://youtube.com/watch?v={idx}"},
+            headers=_auth_headers(idempotency_key=f"discord:g:c:m-rl-{idx}"),
+        )
+
+    assert last_response is not None
+    assert last_response.status_code == 429
+    assert last_response.headers.get("Retry-After") is not None
+
+    app.dependency_overrides.clear()
+    get_settings.cache_clear()
