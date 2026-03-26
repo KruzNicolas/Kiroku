@@ -9,6 +9,7 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
 - **Single & Bulk API Processing:** Process a single URL or send batches through HTTP endpoints.
 - **Smart Retries & Resilience:** Handles API rate-limits gracefully with exponential backoff (`tenacity`) for both the AI model and the Notion API.
 - **Manual Priority Overrides:** Support for appending `high`, `medium`, `low`, or `later` next to a URL to bypass AI priority reasoning and forcefully push the video to a specific queue.
+- **Added at Date:** Video entries include `Added at` based on configurable timezone (default `America/Bogota`).
 
 ## 📋 Prerequisites
 
@@ -36,9 +37,28 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID_VIDEOS`, and `OLLAMA_API_KEY`.
+   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID_VIDEOS`, `NOTION_DATABASE_ID_STUDY_ASSETS_JAPANESE`, `OLLAMA_API_KEY`, `OLLAMA_MODEL_VIDEO`, and `OLLAMA_MODEL_RECEIPTS`.
+
+   Receipts -> Google Sheets integration:
+   - `RECEIPTS_GOOGLE_SHEETS_URL=<your_apps_script_web_app_url>`
+   - `RECEIPTS_GOOGLE_SHEETS_API_TOKEN=<POST_API_TOKEN_from_script_properties>`
+
+   Optional video date timezone config:
+   - `VIDEOS_ADDED_AT_TIMEZONE=America/Bogota`
+
+   Bot gateway hardening config:
+   - `INTERNAL_API_TOKEN=<strong-random-token>`
+   - `IDEMPOTENCY_TTL_SECONDS=86400`
+   - `RATE_LIMIT_VIDEOS_PER_MIN=20`
+   - `RATE_LIMIT_VIDEOS_BATCH_PER_MIN=10`
+   - `RATE_LIMIT_RECEIPTS_PER_MIN=5`
+   - `RATE_LIMIT_STUDY_ASSETS_JP_PER_MIN=15`
 
 ## 💻 API Usage
+
+For full request/response contracts (headers, error cases, payload examples), see:
+
+- [`API_ENDPOINTS_GUIDE.md`](./API_ENDPOINTS_GUIDE.md)
 
 ### Start the API
 
@@ -76,6 +96,77 @@ curl -X POST "http://127.0.0.1:8000/api/v1/videos/batch" \
 
 Batch response includes `failed_urls` to quickly identify links that could not be persisted.
 
+### 4. Create receipt entries from image
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/receipts" \
+  -F "receipt_image=@/absolute/path/to/receipt.jpg" \
+  -F "store_hint=Falabella" \
+  -F "batch_category=Groceries" \
+  -F "request_id=telegram:chat42:update9001"
+```
+
+Response returns line-item headers without `batch_id` and includes Google Sheets POST result.
+
+Receipts endpoint accepts `image/jpeg` and `image/png` only.
+If your source is HEIC/HEIF (common on iPhone), convert it to JPEG in the bot/client before sending.
+
+Date note for receipts pipeline:
+- OCR may infer dates in slash format, but Google Sheets upstream expects `YYYY-MM-DD`.
+- The API now normalizes common date formats before POSTing to Apps Script.
+
+Category note for receipts pipeline:
+- OCR still extracts item category, but `batch_category` can override all items in the current receipt.
+- Allowed values: `Groceries`, `Pharmacy`, `Transport`, `Utilities`, `Subscriptions`, `Debt`, `Leisure`, `Others`.
+
+Quantity note for receipts pipeline:
+- Quantity keeps decimal values for weighted products (e.g., `0.714`, `0.335`).
+
+Price note for receipts pipeline:
+- Receipts are handled as COP whole units.
+- If OCR returns small decimal values (e.g., `2.95` for `2.950`), API normalizes to `2950` before sending to spreadsheet.
+
+### 5. Create manual receipt entries (small purchases)
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/receipts/manual" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date": "2026-03-24",
+    "category": "Others",
+    "store": "MercadoLibre",
+    "items": [
+      {"product": "Keyboard X", "quantity": 1, "price": 400000}
+    ],
+    "request_id": "telegram:chat42:manual9001"
+  }'
+```
+
+### 6. Create Japanese study asset (manual workflow)
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/study-assets/japanese" \
+  -F "image=@/path/to/study-image.jpg;type=image/jpeg" \
+  -F "note=for future manual anki cards"
+```
+
+This endpoint now expects `multipart/form-data`.
+
+- `image` is required and accepts `image/jpeg` or `image/png`.
+- `note` is optional text.
+- API sets Notion `Status` to `Pending` and auto-generates a readable unique `Title`.
+- API uploads binary image bytes through Notion File Upload API and attaches it to `Image` as `file_upload`.
+- API creates a new page for each request (no module upsert key required).
+- API also sets `Added at` using the same timezone-based date strategy as videos (`VIDEOS_ADDED_AT_TIMEZONE`, default `America/Bogota`).
+
+Expected Notion properties for Japanese DB:
+
+- `Title` (title)
+- `Image` (files)
+- `Status` (select)
+- `Note` (rich_text)
+- `Added at` (date)
+
 ## 🧪 Test Write Mode (optional)
 
 If you run real API calls against your Notion database and want to identify test records quickly:
@@ -84,6 +175,19 @@ If you run real API calls against your Notion database and want to identify test
 - if confidence would be `>= 0.8`, the API forces it to `0.79`
 
 Disable it with `APP_TEST_WRITE_MODE=false`.
+
+## 🔐 Bot-Only API Access
+
+All `/api/v1/*` endpoints now require:
+
+- `Authorization: Bearer <INTERNAL_API_TOKEN>`
+- `X-Source` (recommended: `discord-bot` or `telegram-bot`)
+- `Idempotency-Key` (recommended for retry-safe writes)
+
+Optional audit headers:
+
+- `X-Source-Message-Id`
+- `X-Source-User-Id`
 
 ## 🏗 Architecture & Spec-Driven Development
 This project follows Spec-Driven Development (SDD), enforcing strong typings (`pydantic`), interface contracts, and modular layers (`api`, `application`, `domain`, `infrastructure`, `shared`).
@@ -100,6 +204,9 @@ This project follows Spec-Driven Development (SDD), enforcing strong typings (`p
 - `GET /health`
 - `POST /api/v1/videos`
 - `POST /api/v1/videos/batch`
+- `POST /api/v1/receipts`
+- `POST /api/v1/receipts/manual`
+- `POST /api/v1/study-assets/japanese`
 
 ### Run FastAPI locally
 
@@ -122,3 +229,5 @@ pytest
 Current test coverage includes:
 - API endpoint contract tests (`/health`, `/videos`, `/videos/batch`) with dependency overrides.
 - Videos service unit tests for single processing, bulk processing, and validation errors.
+- Receipts API/service tests for OCR extraction contracts.
+- Study assets API/service tests for Japanese image uploads to Notion.
