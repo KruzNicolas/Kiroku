@@ -45,6 +45,10 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
 
    Optional video date timezone config:
    - `VIDEOS_ADDED_AT_TIMEZONE=America/Bogota`
+   - `YTDLP_COOKIE_FILE=/absolute/path/to/youtube_cookies.txt` (recommended when YouTube anti-bot blocks metadata extraction)
+   - `YOUTUBE_API_KEY=<your_google_api_key>`
+   - `YOUTUBE_API_BASE_URL=https://www.googleapis.com/youtube/v3`
+   - `VIDEO_EXTRACTOR_MODE=hybrid` (`hybrid` = YouTube API primary + yt-dlp fallback)
 
    Bot gateway hardening config:
    - `INTERNAL_API_TOKEN=<strong-random-token>`

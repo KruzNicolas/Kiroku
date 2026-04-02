@@ -24,6 +24,10 @@ class Settings:
     rate_limit_videos_batch_per_min: int
     rate_limit_receipts_per_min: int
     rate_limit_study_assets_jp_per_min: int
+    ytdlp_cookie_file: str
+    youtube_api_key: str
+    youtube_api_base_url: str
+    video_extractor_mode: str
     app_test_write_mode: bool
 
 
@@ -89,6 +93,12 @@ def get_settings() -> Settings:
     rate_limit_study_assets_jp_per_min = _as_int(
         os.getenv("RATE_LIMIT_STUDY_ASSETS_JP_PER_MIN"), 15
     )
+    ytdlp_cookie_file = os.getenv("YTDLP_COOKIE_FILE", "")
+    youtube_api_key = os.getenv("YOUTUBE_API_KEY", "")
+    youtube_api_base_url = os.getenv(
+        "YOUTUBE_API_BASE_URL", "https://www.googleapis.com/youtube/v3"
+    )
+    video_extractor_mode = os.getenv("VIDEO_EXTRACTOR_MODE", "hybrid").strip().lower()
     app_test_write_mode = _as_bool(os.getenv("APP_TEST_WRITE_MODE"))
 
     return Settings(
@@ -108,5 +118,9 @@ def get_settings() -> Settings:
         rate_limit_videos_batch_per_min=rate_limit_videos_batch_per_min,
         rate_limit_receipts_per_min=rate_limit_receipts_per_min,
         rate_limit_study_assets_jp_per_min=rate_limit_study_assets_jp_per_min,
+        ytdlp_cookie_file=ytdlp_cookie_file,
+        youtube_api_key=youtube_api_key,
+        youtube_api_base_url=youtube_api_base_url,
+        video_extractor_mode=video_extractor_mode,
         app_test_write_mode=app_test_write_mode,
     )

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from app.modules.videos.application.service import VideosService
 from app.modules.videos.infrastructure.extractors import (
     ExtractionError,
-    MetadataExtractor,
+    build_video_extractor,
 )
 from app.modules.videos.infrastructure.inferencer import (
     InferenceError,
@@ -52,7 +52,7 @@ def get_videos_service() -> VideosService:
     notion_client = build_notion_client()
     notion_save_layer = NotionSaveLayer(notion_client)
     return VideosService(
-        extractor=MetadataExtractor(),
+        extractor=build_video_extractor(),
         inferencer=OllamaInferencer(),
         notion_save_layer=notion_save_layer,
     )
