@@ -1,27 +1,23 @@
 import json
 
-from ollama import Client, ResponseError
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.modules.videos.domain.models import InferenceResult, VideoMetadata
 from app.shared.config.settings import get_settings
+from app.shared.infrastructure.ai_client import AIClient, AIClientError
 
 
 class InferenceError(Exception):
     pass
 
 
-class OllamaInferencer:
+class VideoInferencer:
     def __init__(self):
         settings = get_settings()
-        headers: dict[str, str] = {}
-        if settings.ollama_api_key:
-            headers["Authorization"] = f"Bearer {settings.ollama_api_key}"
-
-        self.model = settings.ollama_model_video
-        self.client = Client(
-            host=settings.ollama_base_url.rstrip("/"),
-            headers=headers if headers else None,
+        self.client = AIClient(
+            api_key=settings.ai_api_key,
+            base_url=settings.ai_base_url,
+            model=settings.ai_model_video,
         )
 
     def _build_prompt(self, metadata: VideoMetadata) -> str:
@@ -55,6 +51,12 @@ Disambiguation Rules:
 - Explicit academic mathematics is Maths.
 - Japanese study workflows are 日本語.
 
+Examples (from real classifications):
+- Title: "La IA es mi nuevo empleado | Claude Code", Channel: "Nate Gentile", Tags: ["AI", "programming", "Claude"] → {{"category": "Dev", "priority": "High", "rationale": "New AI tool demonstration with immediate workflow impact", "confidence": 0.95}}
+- Title: "SER JUGADOR PROFESIONAL DE VALORANT ES HORRIBLE", Channel: "Nore", Tags: ["Valorant", "esports", "gaming"] → {{"category": "Valorant", "priority": "Low", "rationale": "Valorant entertainment content, not tactical/educational", "confidence": 0.92}}
+- Title: "Stop Studying for JLPT N1 (Learn These 100 Words Instead)", Channel: "Kei Fujikawa", Tags: ["Japanese", "JLPT", "language learning", "N1"] → {{"category": "日本語", "priority": "Medium", "rationale": "Japanese study workflow and JLPT preparation", "confidence": 0.94}}
+- Title: "Así es un pueblo poco conocido en Japón", Channel: "Chai Japon", Tags: ["Japan", "travel", "culture"] → {{"category": "Talks", "priority": "Later", "rationale": "Cultural commentary video essay, background content", "confidence": 0.88}}
+
 Output strictly in JSON format matching this schema:
 {{
   "category": "日本語 | Dev | Maths | Valorant | Leisure | Talks",
@@ -73,26 +75,15 @@ Do not include any markdown formatting, backticks, or extra text. Output ONLY va
         prompt = self._build_prompt(metadata)
         response_text = ""
         try:
-            response = self.client.generate(
-                model=self.model,
-                prompt=prompt,
-                format="json",
-                stream=False,
-            )
-
-            response_text = (
-                response.response
-                if hasattr(response, "response")
-                else response.get("response", "")
-            )
+            response_text = self.client.generate_json(prompt=prompt)
             response_text = (
                 response_text.replace("```json", "").replace("```", "").strip()
             )
 
             parsed_data = json.loads(response_text)
             return InferenceResult(**parsed_data)
-        except ResponseError as exc:
-            raise InferenceError(f"Ollama API request failed: {exc.error}") from exc
+        except AIClientError as exc:
+            raise InferenceError(f"AI API request failed: {exc}") from exc
         except json.JSONDecodeError as exc:
             error_msg = f"Failed to parse model JSON output: {exc}"
             if response_text:

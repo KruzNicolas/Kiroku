@@ -3,6 +3,12 @@ import logging
 from datetime import datetime
 
 import requests
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.modules.receipts.domain.models import ReceiptItem
 from app.shared.config.settings import get_settings
@@ -16,7 +22,10 @@ class GoogleSheetsWriter:
     """Writer for Google Apps Script doPost endpoint integration."""
 
     def append_rows(
-        self, items: list[ReceiptItem], request_id: str | None = None
+        self,
+        items: list[ReceiptItem],
+        request_id: str | None = None,
+        source: str = "unknown",
     ) -> dict:
         logger = logging.getLogger("kiroku.receipts.sheets")
         settings = get_settings()
@@ -60,24 +69,21 @@ class GoogleSheetsWriter:
                     "request_id": payload["requestId"],
                     "method": "POST",
                     "path": settings.receipts_google_sheets_url or "-",
-                    "source": "-",
+                    "source": source,
                     "source_message_id": "-",
                     "source_user_id": "-",
                 },
             )
-            response = requests.post(
-                settings.receipts_google_sheets_url,
-                json=payload,
-                timeout=20,
+            response = self._post_payload(
+                settings.receipts_google_sheets_url, payload
             )
-            response.raise_for_status()
             logger.info(
                 "google sheets post completed",
                 extra={
                     "request_id": payload["requestId"],
                     "method": "POST",
                     "path": settings.receipts_google_sheets_url or "-",
-                    "source": "-",
+                    "source": source,
                     "source_message_id": "-",
                     "source_user_id": "-",
                 },
@@ -114,6 +120,17 @@ class GoogleSheetsWriter:
             raise GoogleSheetsWriterError(
                 f"Failed to send rows to Google Sheets: {exc}"
             ) from exc
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type(requests.RequestException),
+        reraise=True,
+    )
+    def _post_payload(self, url: str, payload: dict) -> requests.Response:
+        response = requests.post(url, json=payload, timeout=20)
+        response.raise_for_status()
+        return response
 
 
 def _normalize_sheet_date(raw_date: str) -> str:

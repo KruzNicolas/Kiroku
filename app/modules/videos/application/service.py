@@ -5,7 +5,9 @@ from app.modules.videos.domain.models import FinalPayload, PriorityEnum
 from app.modules.videos.module_config import get_videos_database_id
 from app.shared.config.dates import current_added_at_iso_date
 from app.shared.config.settings import get_settings
+from app.shared.notion.client import build_notion_client
 from app.shared.notion.contracts import NotionSaveCommand, NotionUpsertDescriptor
+from app.shared.notion.save_layer import NotionSaveLayer
 
 
 class ExtractorPort(Protocol):
@@ -52,7 +54,7 @@ class VideosService:
 
         settings = get_settings()
         if settings.app_test_write_mode and inference.confidence >= 0.8:
-            inference.confidence = 0.79
+            inference = inference.model_copy(update={"confidence": 0.79})
 
         payload = FinalPayload(metadata=metadata, inference=inference)
         added_at_iso_date = current_added_at_iso_date()
@@ -116,7 +118,9 @@ class VideosService:
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_input = {
-                executor.submit(self.create_video, item): item
+                executor.submit(
+                    _create_video_worker, item, self.extractor, self.inferencer
+                ): item
                 for item in cleaned_inputs
             }
 
@@ -128,13 +132,16 @@ class VideosService:
                     else original_input
                 )
                 try:
-                    output = future.result()
-                    success_count += 1
+                    output = future.result(timeout=120)
+                    if output.get("success"):
+                        success_count += 1
+                    results.append(output)
+                except TimeoutError:
                     results.append(
                         {
-                            "success": True,
-                            "url": output["url"],
-                            "page_id": output["page_id"],
+                            "success": False,
+                            "url": url,
+                            "error": "Processing timed out after 120s",
                         }
                     )
                 except Exception as exc:
@@ -161,3 +168,23 @@ class VideosService:
             "failed_urls": failed_urls,
             "results": results,
         }
+
+
+def _create_video_worker(
+    raw_input: str, extractor: ExtractorPort, inferencer: InferencerPort
+) -> dict:
+    """Thread-safe worker that creates its own NotionSaveLayer."""
+    notion_client = build_notion_client()
+    notion_save_layer = NotionSaveLayer(notion_client)
+    service = VideosService(
+        extractor=extractor,
+        inferencer=inferencer,
+        notion_save_layer=notion_save_layer,
+    )
+    try:
+        result = service.create_video(raw_input)
+        return {"success": True, **result}
+    except Exception as exc:
+        parts = raw_input.strip().split()
+        url = parts[0] if parts else raw_input
+        return {"success": False, "url": url, "error": str(exc)}

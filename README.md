@@ -2,10 +2,56 @@
 
 Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-powered classification, and idempotent persistence of YouTube videos into Notion.
 
+## 🏗 Architecture
+
+```mermaid
+graph TB
+    subgraph "External"
+        DC[Discord Bot]
+    end
+
+    subgraph "Kiroku API - FastAPI Modular Monolith"
+        GW[Bot Gateway<br/>Security Middleware]
+        
+        subgraph "Modules"
+            VID[Videos Module]
+            REC[Receipts Module]
+            STU[Study Assets Module]
+        end
+        
+        subgraph "Shared Infrastructure"
+            AI[AI Client<br/>openai SDK → DO Serverless Inference]
+            NOT[Notion Save Layer<br/>app/shared/notion/]
+        end
+    end
+
+    subgraph "External Providers"
+        DO[DigitalOcean Serverless Inference<br/>GPT-5 / Claude Sonnet 4.6]
+        NAPI[Notion API]
+        YT[YouTube Data API]
+        GS[Google Sheets]
+    end
+
+    DC -->|HTTP + Auth headers| GW
+    GW --> VID
+    GW --> REC
+    GW --> STU
+    
+    VID -->|extract metadata| YT
+    VID -->|classify| AI
+    REC -->|OCR image| AI
+    STU -->|persist| NOT
+    VID -->|persist| NOT
+    REC -->|persist| GS
+    
+    AI -->|https://inference.do-ai.run/v1| DO
+    NOT -->|notion-client| NAPI
+```
+
 ## 🚀 Features
 
-- **Automated Metadata Extraction:** Safely extracts video title, channel name, tags, description, and game category using `yt-dlp`.
-- **Cloud AI Classification:** Routes reasoning requests directly to the Ollama Cloud API, yielding high-accuracy output mapped to strict Notion schemas without requiring any local GPU or model hosting.
+- **Automated Metadata Extraction:** Safely extracts video title, channel name, tags, description, and game category using the YouTube Data API.
+- **Cloud AI Classification:** Routes reasoning requests directly to DigitalOcean Serverless Inference, yielding high-accuracy output mapped to strict Notion schemas without requiring any local GPU or model hosting.
 - **Single & Bulk API Processing:** Process a single URL or send batches through HTTP endpoints.
 - **Smart Retries & Resilience:** Handles API rate-limits gracefully with exponential backoff (`tenacity`) for both the AI model and the Notion API.
 - **Manual Priority Overrides:** Support for appending `high`, `medium`, `low`, or `later` next to a URL to bypass AI priority reasoning and forcefully push the video to a specific queue.
@@ -13,8 +59,8 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
 
 ## 📋 Prerequisites
 
-1. **Python 3.11+**
-2. **Ollama Cloud API Key** (Get yours at [ollama.com/settings/keys](https://ollama.com/settings/keys)).
+1. **Python 3.13** (3.12 also supported)
+2. **DigitalOcean Serverless Inference API Key** (Create a Model Access Key in your DigitalOcean account under Inference → Model Access Keys. Scope it to Serverless Inference with models `openai/gpt-5` and `anthropic/claude-sonnet-4-6`).
 3. **Notion Internal Integration** with a generated API Token and a properly shared Notion Database. The database must have a `Channel` property (Text) configured.
 
 ## 🛠 Setup
@@ -25,11 +71,12 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
    cd Kiroku
    ```
 
-2. **Set up the virtual environment:**
+2. **Set up the virtual environment (using uv):**
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
+   uv venv --python 3.13
+   source .venv/bin/activate  # Linux/Mac
+   # .venv\Scripts\activate    # Windows
+   uv pip install -r requirements.txt
    ```
 
 3. **Configure Environment Variables:**
@@ -37,18 +84,16 @@ Kiroku API is a FastAPI modular monolith that automates metadata extraction, AI-
    ```bash
    cp .env.example .env
    ```
-   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID_VIDEOS`, `NOTION_DATABASE_ID_STUDY_ASSETS_JAPANESE`, `OLLAMA_API_KEY`, `OLLAMA_MODEL_VIDEO`, and `OLLAMA_MODEL_RECEIPTS`.
+   Edit `.env` to include your exact `NOTION_TOKEN`, `NOTION_DATABASE_ID_VIDEOS`, `NOTION_DATABASE_ID_STUDY_ASSETS_JAPANESE`, `AI_API_KEY`, `AI_MODEL_VIDEO`, and `AI_MODEL_RECEIPTS`.
 
    Receipts -> Google Sheets integration:
    - `RECEIPTS_GOOGLE_SHEETS_URL=<your_apps_script_web_app_url>`
    - `RECEIPTS_GOOGLE_SHEETS_API_TOKEN=<POST_API_TOKEN_from_script_properties>`
 
-   Optional video date timezone config:
-   - `VIDEOS_ADDED_AT_TIMEZONE=America/Bogota`
-   - `YTDLP_COOKIE_FILE=/absolute/path/to/youtube_cookies.txt` (recommended when YouTube anti-bot blocks metadata extraction)
-   - `YOUTUBE_API_KEY=<your_google_api_key>`
-   - `YOUTUBE_API_BASE_URL=https://www.googleapis.com/youtube/v3`
-   - `VIDEO_EXTRACTOR_MODE=hybrid` (`hybrid` = YouTube API primary + yt-dlp fallback)
+   Optional video config:
+    - `VIDEOS_ADDED_AT_TIMEZONE=America/Bogota`
+    - `YOUTUBE_API_KEY=<your_google_api_key>`
+    - `YOUTUBE_API_BASE_URL=https://www.googleapis.com/youtube/v3`
 
    Bot gateway hardening config:
    - `INTERNAL_API_TOKEN=<strong-random-token>`
@@ -67,7 +112,11 @@ For full request/response contracts (headers, error cases, payload examples), se
 ### Start the API
 
 ```bash
-uvicorn app.main:app --reload
+# Development (with reload)
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Production (MUST use 1 worker for in-memory rate limiter)
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
 ### 1. Health check
@@ -81,6 +130,8 @@ curl -X GET "http://127.0.0.1:8000/health"
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/videos" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <INTERNAL_API_TOKEN>" \
+  -H "X-Source: discord-bot" \
   -d '{"url":"https://www.youtube.com/watch?v=...", "manual_priority":"later"}'
 ```
 
@@ -89,6 +140,8 @@ curl -X POST "http://127.0.0.1:8000/api/v1/videos" \
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/videos/batch" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <INTERNAL_API_TOKEN>" \
+  -H "X-Source: discord-bot" \
   -d '{
     "items": [
       {"url": "https://www.youtube.com/watch?v=..."},
@@ -104,10 +157,12 @@ Batch response includes `failed_urls` to quickly identify links that could not b
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/receipts" \
+  -H "Authorization: Bearer <INTERNAL_API_TOKEN>" \
+  -H "X-Source: discord-bot" \
   -F "receipt_image=@/absolute/path/to/receipt.jpg" \
   -F "store_hint=Falabella" \
   -F "batch_category=Groceries" \
-  -F "request_id=telegram:chat42:update9001"
+  -F "request_id=discord:guild123:channel456:message789"
 ```
 
 Response returns line-item headers without `batch_id` and includes Google Sheets POST result.
@@ -135,6 +190,8 @@ Price note for receipts pipeline:
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/receipts/manual" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <INTERNAL_API_TOKEN>" \
+  -H "X-Source: discord-bot" \
   -d '{
     "date": "2026-03-24",
     "category": "Others",
@@ -142,7 +199,7 @@ curl -X POST "http://127.0.0.1:8000/api/v1/receipts/manual" \
     "items": [
       {"product": "Keyboard X", "quantity": 1, "price": 400000}
     ],
-    "request_id": "telegram:chat42:manual9001"
+    "request_id": "discord:guild123:channel456:message789"
   }'
 ```
 
@@ -150,6 +207,8 @@ curl -X POST "http://127.0.0.1:8000/api/v1/receipts/manual" \
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/api/v1/study-assets/japanese" \
+  -H "Authorization: Bearer <INTERNAL_API_TOKEN>" \
+  -H "X-Source: discord-bot" \
   -F "image=@/path/to/study-image.jpg;type=image/jpeg" \
   -F "note=for future manual anki cards"
 ```
@@ -196,12 +255,17 @@ Optional audit headers:
 ## 🏗 Architecture & Spec-Driven Development
 This project follows Spec-Driven Development (SDD), enforcing strong typings (`pydantic`), interface contracts, and modular layers (`api`, `application`, `domain`, `infrastructure`, `shared`).
 
-## 🏗 Architecture & Migration Status
+### AI Models (DigitalOcean Serverless Inference)
+- **Video Classification:** `openai/gpt-5` (cheaper and newer than GPT-4o)
+- **Receipt OCR:** `anthropic/claude-sonnet-4-6` (best-in-class OCR and JSON adherence)
+
+## 🏗 Architecture & Project Status
 
 - FastAPI modular monolith structure is active under `app/`.
-- The `videos` module is migrated and exposed via API.
 - Notion persistence is centralized in `app/shared/notion/save_layer.py`.
+- AI inference is centralized in `app/shared/infrastructure/ai_client.py` (OpenAI SDK → DigitalOcean Serverless Inference).
 - Module-owned DB id is configured through `NOTION_DATABASE_ID_VIDEOS`.
+- Legacy Ollama integration has been completely removed.
 
 ### API Endpoints
 
@@ -215,12 +279,14 @@ This project follows Spec-Driven Development (SDD), enforcing strong typings (`p
 ### Run FastAPI locally
 
 ```bash
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Important migration constraint
+**Note:** The current rate limiter and idempotency store use in-memory state. If you run multiple uvicorn workers, each process will have isolated state, breaking rate limits and idempotency across workers. For single-instance deployment, use `--workers 1`. For multi-worker or multi-instance, migrate to Redis or another shared store.
 
-No Docker/container/cloud infrastructure changes are part of this migration stage.
+```bash
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+```
 
 ## ✅ Testing
 

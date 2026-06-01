@@ -4,7 +4,7 @@ from app.modules.receipts.infrastructure.sheets_writer import _normalize_sheet_d
 
 
 class StubReceiptsInferencer:
-    def extract(self, payload):
+    def extract(self, payload, source: str = "unknown"):
         return ReceiptExtractionResult(
             items=[
                 ReceiptItem(
@@ -20,7 +20,7 @@ class StubReceiptsInferencer:
 
 
 class StubSheetsWriter:
-    def append_rows(self, items, request_id: str | None = None):
+    def append_rows(self, items, request_id: str | None = None, source: str = "unknown"):
         return {
             "status": "sent",
             "rows_received": len(items),

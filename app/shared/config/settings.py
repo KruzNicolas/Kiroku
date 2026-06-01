@@ -11,10 +11,12 @@ class Settings:
     notion_token: str
     notion_database_id_videos: str
     notion_database_id_study_assets_japanese: str
-    ollama_base_url: str
-    ollama_api_key: str
-    ollama_model_video: str
-    ollama_model_receipts: str
+    # AI settings
+    ai_provider: str
+    ai_base_url: str
+    ai_api_key: str
+    ai_model_video: str
+    ai_model_receipts: str
     receipts_google_sheets_url: str
     receipts_google_sheets_api_token: str
     videos_added_at_tz: str
@@ -24,10 +26,8 @@ class Settings:
     rate_limit_videos_batch_per_min: int
     rate_limit_receipts_per_min: int
     rate_limit_study_assets_jp_per_min: int
-    ytdlp_cookie_file: str
     youtube_api_key: str
     youtube_api_base_url: str
-    video_extractor_mode: str
     app_test_write_mode: bool
 
 
@@ -66,15 +66,14 @@ def get_settings() -> Settings:
     study_assets_japanese_db_id = os.getenv(
         "NOTION_DATABASE_ID_STUDY_ASSETS_JAPANESE", ""
     )
-    ollama_base_url = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
-    ollama_api_key = os.getenv("OLLAMA_API_KEY", "")
-    ollama_model_video = os.getenv(
-        "OLLAMA_MODEL_VIDEO", os.getenv("OLLAMA_MODEL", "minimax-m2.5:cloud")
-    )
-    ollama_model_receipts = os.getenv(
-        "OLLAMA_MODEL_RECEIPTS",
-        os.getenv("OLLAMA_MODEL_FINANCIAL", ollama_model_video),
-    )
+
+    # AI settings
+    ai_provider = os.getenv("AI_PROVIDER", "digitalocean")
+    ai_base_url = os.getenv("AI_BASE_URL", "https://inference.do-ai.run/v1")
+    ai_api_key = os.getenv("AI_API_KEY", "")
+    ai_model_video = os.getenv("AI_MODEL_VIDEO", "openai/gpt-5")
+    ai_model_receipts = os.getenv("AI_MODEL_RECEIPTS", "anthropic/claude-sonnet-4-6")
+
     receipts_google_sheets_url = os.getenv(
         "RECEIPTS_GOOGLE_SHEETS_URL",
         os.getenv("FINANCIAL_GOOGLE_SHEETS_URL", ""),
@@ -93,22 +92,21 @@ def get_settings() -> Settings:
     rate_limit_study_assets_jp_per_min = _as_int(
         os.getenv("RATE_LIMIT_STUDY_ASSETS_JP_PER_MIN"), 15
     )
-    ytdlp_cookie_file = os.getenv("YTDLP_COOKIE_FILE", "")
     youtube_api_key = os.getenv("YOUTUBE_API_KEY", "")
     youtube_api_base_url = os.getenv(
         "YOUTUBE_API_BASE_URL", "https://www.googleapis.com/youtube/v3"
     )
-    video_extractor_mode = os.getenv("VIDEO_EXTRACTOR_MODE", "hybrid").strip().lower()
     app_test_write_mode = _as_bool(os.getenv("APP_TEST_WRITE_MODE"))
 
     return Settings(
         notion_token=notion_token,
         notion_database_id_videos=videos_db_id,
         notion_database_id_study_assets_japanese=study_assets_japanese_db_id,
-        ollama_base_url=ollama_base_url,
-        ollama_api_key=ollama_api_key,
-        ollama_model_video=ollama_model_video,
-        ollama_model_receipts=ollama_model_receipts,
+        ai_provider=ai_provider,
+        ai_base_url=ai_base_url,
+        ai_api_key=ai_api_key,
+        ai_model_video=ai_model_video,
+        ai_model_receipts=ai_model_receipts,
         receipts_google_sheets_url=receipts_google_sheets_url,
         receipts_google_sheets_api_token=receipts_google_sheets_api_token,
         videos_added_at_tz=videos_added_at_tz,
@@ -118,9 +116,7 @@ def get_settings() -> Settings:
         rate_limit_videos_batch_per_min=rate_limit_videos_batch_per_min,
         rate_limit_receipts_per_min=rate_limit_receipts_per_min,
         rate_limit_study_assets_jp_per_min=rate_limit_study_assets_jp_per_min,
-        ytdlp_cookie_file=ytdlp_cookie_file,
         youtube_api_key=youtube_api_key,
         youtube_api_base_url=youtube_api_base_url,
-        video_extractor_mode=video_extractor_mode,
         app_test_write_mode=app_test_write_mode,
     )

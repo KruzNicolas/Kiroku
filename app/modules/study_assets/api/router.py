@@ -4,8 +4,12 @@ from pydantic import BaseModel
 from app.modules.study_assets.application.service import StudyAssetsService
 from app.shared.notion.client import build_notion_client
 from app.shared.notion.save_layer import NotionSaveLayer, NotionSaveLayerError
+from app.shared.security.validators import validate_image_type
 
-router = APIRouter(prefix="/study-assets", tags=["study-assets"])
+router = APIRouter(
+    prefix="/study-assets",
+    tags=["study-assets"],
+)
 
 
 class CreateJapaneseAssetResponse(BaseModel):
@@ -25,17 +29,16 @@ def get_study_assets_service() -> StudyAssetsService:
 @router.post("/japanese", response_model=CreateJapaneseAssetResponse, status_code=201)
 async def create_japanese_asset(
     image: UploadFile = File(...),
-    note: str | None = Form(default=None),
-    service: StudyAssetsService = Depends(get_study_assets_service),
+    note: str | None = Form(default=None, max_length=1024),
+    service = Depends(get_study_assets_service),
 ) -> CreateJapaneseAssetResponse:
     try:
         content_type = (image.content_type or "").strip().lower()
-        if content_type not in {"image/jpeg", "image/png"}:
-            raise ValueError(
-                "Unsupported study asset image type. Use image/jpeg or image/png (convert HEIC/HEIF before sending)."
-            )
+        validate_image_type(content_type, context="study asset image")
 
         image_bytes = await image.read()
+        if len(image_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Image too large. Max 10MB.")
         if not image_bytes:
             raise ValueError("image is empty")
 

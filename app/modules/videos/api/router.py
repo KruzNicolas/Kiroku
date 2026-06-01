@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from app.modules.videos.application.service import VideosService
 from app.modules.videos.infrastructure.extractors import (
@@ -8,7 +8,7 @@ from app.modules.videos.infrastructure.extractors import (
 )
 from app.modules.videos.infrastructure.inferencer import (
     InferenceError,
-    OllamaInferencer,
+    VideoInferencer,
 )
 from app.shared.notion.client import build_notion_client
 from app.shared.notion.save_layer import NotionSaveLayer, NotionSaveLayerError
@@ -17,8 +17,24 @@ router = APIRouter(prefix="/videos", tags=["videos"])
 
 
 class ProcessVideoRequest(BaseModel):
-    url: str
-    manual_priority: str | None = None
+    url: str = Field(max_length=2048)
+    manual_priority: str | None = Field(default=None, max_length=32)
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        HttpUrl(v)
+        return v
+
+    @field_validator("manual_priority")
+    @classmethod
+    def validate_priority(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"high", "medium", "low", "later"}
+        if v.lower() not in allowed:
+            raise ValueError(f"manual_priority must be one of: {allowed}")
+        return v.lower()
 
 
 class ProcessVideoResponse(BaseModel):
@@ -28,8 +44,8 @@ class ProcessVideoResponse(BaseModel):
 
 
 class BulkVideoRequest(BaseModel):
-    items: list[ProcessVideoRequest]
-    max_workers: int = 3
+    items: list[ProcessVideoRequest] = Field(max_length=15)
+    max_workers: int = Field(default=3, ge=1, le=3)
 
 
 class BulkVideoItemResult(BaseModel):
@@ -53,7 +69,7 @@ def get_videos_service() -> VideosService:
     notion_save_layer = NotionSaveLayer(notion_client)
     return VideosService(
         extractor=build_video_extractor(),
-        inferencer=OllamaInferencer(),
+        inferencer=VideoInferencer(),
         notion_save_layer=notion_save_layer,
     )
 
@@ -61,7 +77,7 @@ def get_videos_service() -> VideosService:
 @router.post("", response_model=ProcessVideoResponse, status_code=201)
 async def create_video(
     request: ProcessVideoRequest,
-    service: VideosService = Depends(get_videos_service),
+    service = Depends(get_videos_service),
 ) -> ProcessVideoResponse:
     try:
         raw_input = request.url
@@ -82,7 +98,7 @@ async def create_video(
 @router.post("/batch", response_model=BulkVideoResponse)
 async def create_videos_batch(
     request: BulkVideoRequest,
-    service: VideosService = Depends(get_videos_service),
+    service = Depends(get_videos_service),
 ) -> BulkVideoResponse:
     try:
         raw_inputs: list[str] = []

@@ -1,11 +1,26 @@
 .venv/
 .env
+.env.local
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 *.log
+
+# AI/LLM artifacts
+.atl/
+.opencode/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
 
 # Planning docs kept local only
 bots/*.md

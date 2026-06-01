@@ -26,7 +26,7 @@ Bots act as transport adapters only; business logic remains in Kiroku API.
 2. Prevent duplicate processing with idempotency.
 3. Enforce source-aware rate limits.
 4. Keep clear auditability through structured source headers/logs.
-5. Preserve modular boundaries while integrating Notion, Ollama, yt-dlp, and Sheets.
+5. Preserve modular boundaries while integrating Notion, DigitalOcean Serverless Inference, and Sheets.
 
 ---
 
@@ -41,7 +41,7 @@ Endpoints:
 
 Flow:
 
-1. Extract metadata via `yt-dlp` (title/channel/description/tags/game category).
+1. Extract metadata via YouTube Data API (title/channel/description/tags/game category).
 2. Classify via AI inferencer.
 3. Persist to Notion with:
    - `Title`, `Channel`, `URL`, `Category`, `Priority`, `Confidence`, `Added at`

@@ -9,8 +9,8 @@ This file defines project-specific guidance for AI assistants working in this re
 - Target state: FastAPI modular monolith for VPS deployment
 - Primary external integrations:
   - Notion API (database persistence)
-  - Ollama API (inference)
-  - YouTube metadata extraction (`yt-dlp`)
+  - DigitalOcean Serverless Inference (inference)
+  - YouTube metadata extraction (YouTube Data API)
 
 ## Tech Stack
 
@@ -20,8 +20,8 @@ This file defines project-specific guidance for AI assistants working in this re
 - **HTTP/API serving**: Uvicorn + FastAPI
 - **Retries**: Tenacity
 - **Notion SDK**: `notion-client`
-- **Metadata extraction**: `yt-dlp`
-- **Inference client**: `ollama`
+- **Metadata extraction**: YouTube Data API
+- **Inference client**: `openai` (via DigitalOcean Serverless Inference)
 - **Environment management**: `.env` + `python-dotenv`
 
 ## Architecture Rules

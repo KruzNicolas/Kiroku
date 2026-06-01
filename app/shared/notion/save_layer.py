@@ -9,6 +9,7 @@ from tenacity import (
 )
 
 from app.shared.notion.contracts import NotionSaveCommand, NotionUpsertDescriptor
+from app.shared.notion.client import _NOTION_API_VERSION
 from app.shared.config.settings import get_settings
 
 
@@ -70,12 +71,6 @@ class NotionSaveLayer:
         except Exception as exc:  # pragma: no cover
             raise NotionSaveLayerError(f"Failed to create Notion page: {exc}") from exc
 
-    @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        stop=stop_after_attempt(3),
-        retry=retry_if_exception_type(APIResponseError),
-        reraise=True,
-    )
     def upload_file(self, *, content: bytes, filename: str, content_type: str) -> str:
         try:
             create_response = self._create_file_upload(
@@ -139,7 +134,7 @@ class NotionSaveLayer:
         settings = get_settings()
         return {
             "Authorization": f"Bearer {settings.notion_token}",
-            "Notion-Version": "2026-03-11",
+            "Notion-Version": _NOTION_API_VERSION,
         }
 
     def _send_file_upload(

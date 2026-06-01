@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 
 from fastapi import Request
@@ -30,10 +31,17 @@ class BotGatewayHardeningMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
         token = auth_header.removeprefix("Bearer ").strip()
-        if token != expected:
+        if not hmac.compare_digest(token, expected):
             return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
 
-        source = request.headers.get("x-source", "unknown")
+        ALLOWED_SOURCES = {"discord-bot", "telegram-bot"}
+        raw_source = request.headers.get("x-source")
+        if raw_source is not None and raw_source not in ALLOWED_SOURCES:
+            return JSONResponse(
+                status_code=400,
+                content={"detail": f"Invalid X-Source header. Allowed: {', '.join(sorted(ALLOWED_SOURCES))}"},
+            )
+        source = raw_source if raw_source is not None else "unknown"
         source_message_id = request.headers.get("x-source-message-id", "-")
         source_user_id = request.headers.get("x-source-user-id", "-")
 
@@ -55,7 +63,7 @@ class BotGatewayHardeningMiddleware(BaseHTTPMiddleware):
 
         limit = self._resolve_limit(request.url.path, settings)
         if limit is not None:
-            allowed, retry_after = rate_limiter.allow(
+            allowed, retry_after = rate_limiter.check(
                 source=source, path=request.url.path, limit_per_min=limit
             )
             if not allowed:
@@ -66,6 +74,9 @@ class BotGatewayHardeningMiddleware(BaseHTTPMiddleware):
                 )
 
         response = await call_next(request)
+
+        if limit is not None and response.status_code < 500:
+            rate_limiter.increment(source=source, path=request.url.path)
 
         if stored_key and 200 <= response.status_code < 500:
             response = await self._capture_and_store_response(

@@ -17,11 +17,13 @@ ALLOWED_RECEIPT_CATEGORIES = {
 
 
 class OCRInferencerPort(Protocol):
-    def extract(self, payload: ReceiptExtractionInput): ...
+    def extract(self, payload: ReceiptExtractionInput, source: str = "unknown"): ...
 
 
 class SheetsWriterPort(Protocol):
-    def append_rows(self, items: list, request_id: str | None = None): ...
+    def append_rows(
+        self, items: list, request_id: str | None = None, source: str = "unknown"
+    ): ...
 
 
 class ReceiptsService:
@@ -40,6 +42,7 @@ class ReceiptsService:
         store_hint: str | None = None,
         request_id: str | None = None,
         batch_category: str | None = None,
+        source: str = "unknown",
     ) -> dict:
         self.logger.info(
             "receipts workflow started",
@@ -47,7 +50,7 @@ class ReceiptsService:
                 "request_id": request_id or "-",
                 "method": "-",
                 "path": "/api/v1/receipts",
-                "source": "-",
+                "source": source,
                 "source_message_id": "-",
                 "source_user_id": "-",
             },
@@ -64,12 +67,12 @@ class ReceiptsService:
                 "request_id": request_id or "-",
                 "method": "-",
                 "path": "/api/v1/receipts",
-                "source": "-",
+                "source": source,
                 "source_message_id": "-",
                 "source_user_id": "-",
             },
         )
-        extraction = self.inferencer.extract(payload)
+        extraction = self.inferencer.extract(payload, source=source)
 
         normalized_items = self._apply_batch_category_override(
             extraction.items,
@@ -81,7 +84,7 @@ class ReceiptsService:
                 "request_id": request_id or "-",
                 "method": "-",
                 "path": "/api/v1/receipts",
-                "source": "-",
+                "source": source,
                 "source_message_id": "-",
                 "source_user_id": "-",
             },
@@ -93,13 +96,13 @@ class ReceiptsService:
                 "request_id": request_id or "-",
                 "method": "-",
                 "path": "/api/v1/receipts",
-                "source": "-",
+                "source": source,
                 "source_message_id": "-",
                 "source_user_id": "-",
             },
         )
         sheets_result = self.sheets_writer.append_rows(
-            normalized_items, request_id=request_id
+            normalized_items, request_id=request_id, source=source
         )
         self.logger.info(
             "receipts sheets sync completed",
@@ -107,7 +110,7 @@ class ReceiptsService:
                 "request_id": request_id or "-",
                 "method": "-",
                 "path": "/api/v1/receipts",
-                "source": "-",
+                "source": source,
                 "source_message_id": "-",
                 "source_user_id": "-",
             },
@@ -127,6 +130,7 @@ class ReceiptsService:
         store: str,
         items: list[dict],
         request_id: str | None = None,
+        source: str = "unknown",
     ) -> dict:
         if not items:
             raise ValueError("items cannot be empty")
@@ -152,7 +156,7 @@ class ReceiptsService:
             )
 
         sheets_result = self.sheets_writer.append_rows(
-            receipt_items, request_id=request_id
+            receipt_items, request_id=request_id, source=source
         )
         return {
             "status": "ok",

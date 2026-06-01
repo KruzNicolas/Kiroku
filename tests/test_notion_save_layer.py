@@ -1,5 +1,6 @@
 import app.shared.notion.save_layer as save_layer_module
 from types import SimpleNamespace
+from app.shared.notion.client import _NOTION_API_VERSION
 from app.shared.notion.contracts import NotionSaveCommand, NotionUpsertDescriptor
 from app.shared.notion.save_layer import NotionSaveLayer, NotionSaveLayerError
 
@@ -223,7 +224,7 @@ def test_upload_file_returns_file_upload_id(monkeypatch):
         "url": "https://api.notion.com/v1/file_uploads",
         "headers": {
             "Authorization": "Bearer test-token",
-            "Notion-Version": "2026-03-11",
+            "Notion-Version": _NOTION_API_VERSION,
         },
         "json": {
             "mode": "single_part",
@@ -238,7 +239,7 @@ def test_upload_file_returns_file_upload_id(monkeypatch):
     )
     assert captured["posts"][1]["headers"] == {
         "Authorization": "Bearer test-token",
-        "Notion-Version": "2026-03-11",
+        "Notion-Version": _NOTION_API_VERSION,
     }
     assert captured["posts"][1]["files"] == {
         "file": ("asset.png", b"img-bytes", "image/png")
@@ -247,7 +248,7 @@ def test_upload_file_returns_file_upload_id(monkeypatch):
         "url": "https://api.notion.com/v1/file_uploads/upload-id-123",
         "headers": {
             "Authorization": "Bearer test-token",
-            "Notion-Version": "2026-03-11",
+            "Notion-Version": _NOTION_API_VERSION,
         },
         "timeout": 30,
     }

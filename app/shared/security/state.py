@@ -49,7 +49,7 @@ class InMemoryRateLimiter:
         self._counts: dict[tuple[str, str, int], int] = {}
         self._lock = threading.Lock()
 
-    def allow(self, source: str, path: str, limit_per_min: int) -> tuple[bool, int]:
+    def check(self, source: str, path: str, limit_per_min: int) -> tuple[bool, int]:
         now = time.time()
         window = int(now // 60)
         retry_after = int((window + 1) * 60 - now)
@@ -60,8 +60,23 @@ class InMemoryRateLimiter:
             current = self._counts.get(key, 0)
             if current >= limit_per_min:
                 return False, max(1, retry_after)
-            self._counts[key] = current + 1
             return True, max(1, retry_after)
+
+    def increment(self, source: str, path: str) -> None:
+        now = time.time()
+        window = int(now // 60)
+        key = (source, path, window)
+
+        with self._lock:
+            self._cleanup_locked(window)
+            current = self._counts.get(key, 0)
+            self._counts[key] = current + 1
+
+    def allow(self, source: str, path: str, limit_per_min: int) -> tuple[bool, int]:
+        allowed, retry_after = self.check(source, path, limit_per_min)
+        if allowed:
+            self.increment(source, path)
+        return allowed, retry_after
 
     def clear(self) -> None:
         with self._lock:

@@ -120,6 +120,9 @@ def _normalize_cop_price(value: float) -> float:
 
     # For COP receipts we expect whole currency units.
     # If model returns decimal values like 2.95 for 2.950, scale to thousands.
+    # Edge case: a legitimate decimal like 500.5 will also be scaled.
+    # This heuristic is intentional because the OCR model often misplaces
+    # the decimal point for Colombian pesos (e.g., 2.950 -> 2.95).
     if not float(value).is_integer():
         if value < 1000:
             return float(round(value * 1000))

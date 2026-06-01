@@ -12,6 +12,7 @@ class StubReceiptsService:
         store_hint: str | None = None,
         request_id: str | None = None,
         batch_category: str | None = None,
+        source: str = "unknown",
     ):
         return {
             "status": "ok",
@@ -40,6 +41,7 @@ class StubReceiptsService:
         store: str,
         items: list[dict],
         request_id: str | None = None,
+        source: str = "unknown",
     ):
         return {
             "status": "ok",
@@ -149,6 +151,7 @@ def test_receipts_api_surfaces_google_sheets_rejection_message():
             store_hint=None,
             request_id=None,
             batch_category=None,
+            source="unknown",
         ):
             from app.modules.receipts.infrastructure.sheets_writer import (
                 GoogleSheetsWriterError,

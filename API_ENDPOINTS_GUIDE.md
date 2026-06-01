@@ -395,14 +395,9 @@ Price behavior:
 
 ### 502 Bad Gateway
 
-Returned for upstream integration failures (Notion/Ollama/extractors).
+Returned for upstream integration failures (Notion/AI inference/extractors).
 
 YouTube extractor note:
 
-- Videos extraction mode is controlled by `VIDEO_EXTRACTOR_MODE`:
-  - `hybrid` (recommended): YouTube Data API primary, yt-dlp fallback
-  - `youtube_api`: YouTube Data API only
-  - `yt_dlp`: yt-dlp only
-- For YouTube Data API modes, set `YOUTUBE_API_KEY`.
-- If batch/single video returns failures containing `Sign in to confirm you're not a bot`, YouTube is blocking anonymous metadata extraction for your IP/session pattern.
-- Configure `YTDLP_COOKIE_FILE` with a valid exported browser cookies file (Netscape format) so `yt-dlp` can access metadata.
+- Videos metadata is extracted via the YouTube Data API.
+- Set `YOUTUBE_API_KEY` to enable extraction.

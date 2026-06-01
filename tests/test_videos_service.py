@@ -57,6 +57,31 @@ def _build_service(notion_layer: StubNotionSaveLayer | None = None) -> VideosSer
     )
 
 
+def _patch_notion_client(monkeypatch, fail_on_url: str | None = None):
+    """Patch NotionSaveLayer for bulk tests.
+
+    If fail_on_url is provided, the save layer will raise an error when
+    upserting a page with that URL in the upsert descriptor.
+    """
+
+    class TestNotionSaveLayer:
+        def __init__(self, client):
+            self.client = client
+            self.last_command = None
+
+        def upsert_page(self, command):
+            self.last_command = command
+            if fail_on_url and command.upsert and fail_on_url in str(command.upsert.equals):
+                raise RuntimeError("Simulated DB failure")
+            return "page_test_123"
+
+    monkeypatch.setattr(
+        videos_service_module,
+        "NotionSaveLayer",
+        TestNotionSaveLayer,
+    )
+
+
 def test_process_url_success_with_manual_priority(monkeypatch):
     from app.shared.config.settings import get_settings
 
@@ -103,7 +128,8 @@ def test_create_video_preserves_url_for_upsert_descriptor():
     )
 
 
-def test_process_bulk_mixed_inputs():
+def test_process_bulk_mixed_inputs(monkeypatch):
+    _patch_notion_client(monkeypatch)
     service = _build_service()
     result = service.create_videos_bulk(
         [
@@ -151,17 +177,9 @@ def test_process_url_forces_test_confidence_below_point_8(monkeypatch):
     get_settings.cache_clear()
 
 
-class FailOnSpecificUrlNotionLayer(StubNotionSaveLayer):
-    def upsert_page(self, command):
-        self.last_command = command
-        if command.upsert and "fail" in str(command.upsert.equals):
-            raise RuntimeError("Simulated DB failure")
-        return "page_test_123"
-
-
-def test_create_videos_bulk_returns_failed_urls_on_errors():
-    notion_layer = FailOnSpecificUrlNotionLayer()
-    service = _build_service(notion_layer=notion_layer)
+def test_create_videos_bulk_returns_failed_urls_on_errors(monkeypatch):
+    _patch_notion_client(monkeypatch, fail_on_url="fail")
+    service = _build_service()
 
     result = service.create_videos_bulk(
         [
