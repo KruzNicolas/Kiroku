@@ -1,3 +1,4 @@
+import pytest
 import app.modules.videos.application.service as videos_service_module
 from app.modules.videos.application.service import VideosService
 from app.modules.videos.domain.models import (
@@ -6,6 +7,14 @@ from app.modules.videos.domain.models import (
     PriorityEnum,
     VideoMetadata,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_database_id(monkeypatch):
+    """Mock database ID for all tests in this file to avoid CI env var errors."""
+    from app.shared.config.settings import get_settings
+    monkeypatch.setenv("NOTION_DATABASE_ID_VIDEOS", "test-db-id")
+    get_settings.cache_clear()
 
 
 class StubExtractor:
