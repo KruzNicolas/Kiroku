@@ -3,8 +3,8 @@ import json
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.modules.videos.domain.models import InferenceResult, VideoMetadata
-from app.shared.config.settings import get_settings
-from app.shared.infrastructure.ai_client import AIClient, AIClientError
+from app.shared.infrastructure.ai_client import AIClientError
+from app.shared.infrastructure.ai_factory import build_ai_client
 
 
 class InferenceError(Exception):
@@ -13,12 +13,7 @@ class InferenceError(Exception):
 
 class VideoInferencer:
     def __init__(self):
-        settings = get_settings()
-        self.client = AIClient(
-            api_key=settings.ai_api_key,
-            base_url=settings.ai_base_url,
-            model=settings.ai_model_video,
-        )
+        self.client = build_ai_client("videos")
 
     def _build_prompt(self, metadata: VideoMetadata) -> str:
         return f"""

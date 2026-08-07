@@ -11,12 +11,14 @@ class Settings:
     notion_token: str
     notion_database_id_videos: str
     notion_database_id_study_assets_japanese: str
-    # AI settings
-    ai_provider: str
+    # AI settings (global defaults — can be overridden per module)
     ai_base_url: str
     ai_api_key: str
     ai_model_video: str
     ai_model_receipts: str
+    # Per-module overrides (optional — fall back to global AI_* when unset)
+    videos_ai_base_url: str
+    receipts_ai_base_url: str
     receipts_google_sheets_url: str
     receipts_google_sheets_api_token: str
     videos_added_at_tz: str
@@ -67,12 +69,14 @@ def get_settings() -> Settings:
         "NOTION_DATABASE_ID_STUDY_ASSETS_JAPANESE", ""
     )
 
-    # AI settings
-    ai_provider = os.getenv("AI_PROVIDER", "digitalocean")
-    ai_base_url = os.getenv("AI_BASE_URL", "https://inference.do-ai.run/v1")
+    # AI settings (global defaults)
+    ai_base_url = os.getenv("AI_BASE_URL", "https://opencode.ai/zen/go/v1")
     ai_api_key = os.getenv("AI_API_KEY", "")
-    ai_model_video = os.getenv("AI_MODEL_VIDEO", "openai/gpt-5")
-    ai_model_receipts = os.getenv("AI_MODEL_RECEIPTS", "anthropic/claude-sonnet-4-6")
+    ai_model_video = os.getenv("AI_MODEL_VIDEO", "mimo-v2.5")
+    ai_model_receipts = os.getenv("AI_MODEL_RECEIPTS", "mimo-v2.5-pro")
+    # Per-module base URL overrides (optional — fall back to AI_BASE_URL when unset)
+    videos_ai_base_url = os.getenv("VIDEOS_AI_BASE_URL", "")
+    receipts_ai_base_url = os.getenv("RECEIPTS_AI_BASE_URL", "")
 
     receipts_google_sheets_url = os.getenv(
         "RECEIPTS_GOOGLE_SHEETS_URL",
@@ -102,11 +106,12 @@ def get_settings() -> Settings:
         notion_token=notion_token,
         notion_database_id_videos=videos_db_id,
         notion_database_id_study_assets_japanese=study_assets_japanese_db_id,
-        ai_provider=ai_provider,
         ai_base_url=ai_base_url,
         ai_api_key=ai_api_key,
         ai_model_video=ai_model_video,
         ai_model_receipts=ai_model_receipts,
+        videos_ai_base_url=videos_ai_base_url,
+        receipts_ai_base_url=receipts_ai_base_url,
         receipts_google_sheets_url=receipts_google_sheets_url,
         receipts_google_sheets_api_token=receipts_google_sheets_api_token,
         videos_added_at_tz=videos_added_at_tz,

@@ -7,8 +7,8 @@ from app.modules.receipts.domain.models import (
     ReceiptExtractionInput,
     ReceiptExtractionResult,
 )
-from app.shared.config.settings import get_settings
-from app.shared.infrastructure.ai_client import AIClient, AIClientError
+from app.shared.infrastructure.ai_client import AIClientError
+from app.shared.infrastructure.ai_factory import build_ai_client
 
 
 class ReceiptsInferenceError(Exception):
@@ -17,12 +17,7 @@ class ReceiptsInferenceError(Exception):
 
 class ReceiptInferencer:
     def __init__(self):
-        settings = get_settings()
-        self.client = AIClient(
-            api_key=settings.ai_api_key,
-            base_url=settings.ai_base_url,
-            model=settings.ai_model_receipts,
-        )
+        self.client = build_ai_client("receipts")
         self.logger = logging.getLogger("kiroku.receipts.ocr")
 
     def _build_prompt(self, payload: ReceiptExtractionInput) -> str:
